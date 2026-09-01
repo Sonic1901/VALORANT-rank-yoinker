@@ -657,9 +657,7 @@ try:
                             "agentImgLink": loadouts_data["Players"][
                                 player["Subject"]
                             ].get("Agent", None),
-                            "team": loadouts_data["Players"][player["Subject"]].get(
-                                "Team", None
-                            ),
+                            "team": player["TeamID"],
                         }
 
                         stats.save_data(
