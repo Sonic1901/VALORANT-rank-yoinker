@@ -65,6 +65,49 @@ def get_recent_match_history(puuid, Requests_obj, log_func, retries=2, backoff_f
             time.sleep(wait_time)
     return set()
 
+
+def _get_match_team_members(match_id, Requests_obj, log_func):
+    """Return normalized team membership from one ranked match detail response."""
+    cache = getattr(Requests_obj, "_party_match_details_cache", {})
+    Requests_obj._party_match_details_cache = cache
+    if match_id in cache:
+        return cache[match_id]
+
+    try:
+        response = Requests_obj.fetch(
+            "pd", f"/match-details/v1/matches/{match_id}", "get", rate_limit_seconds=1
+        )
+        if response is None or not response.ok:
+            cache[match_id] = {}
+            return {}
+        team_members = {}
+        for player in response.json().get("players", []):
+            subject = str(player.get("subject") or "").lower()
+            team = player.get("teamId") or player.get("TeamID")
+            if subject and team:
+                team_members.setdefault(str(team).lower(), set()).add(subject)
+        cache[match_id] = team_members
+        return team_members
+    except Exception as exc:
+        log_func(f"Unable to verify party match {match_id}: {exc}")
+        cache[match_id] = {}
+        return {}
+
+
+def _verified_shared_match(
+    first_puuid, second_puuid, shared_matches, Requests_obj, log_func
+):
+    """Accept a single shared history match only when its roster confirms teammates."""
+    for match_id in shared_matches:
+        team_members = _get_match_team_members(match_id, Requests_obj, log_func)
+        if any(
+            first_puuid in members and second_puuid in members
+            for members in team_members.values()
+        ):
+            return match_id
+    return None
+
+
 def find_parties(
     puuids: list[str],
     Requests_obj,
@@ -129,6 +172,7 @@ def find_parties(
     # Compare every pair and then group connected matches. This detects
     # opponent parties even when one member has a different recent window.
     graph = {puuid: set() for puuid in sorted_puuids}
+    verified_fallback_matches = {}
     for index, puuid in enumerate(sorted_puuids):
         for other_puuid in sorted_puuids[index + 1:]:
             if current_teams and normalized_teams.get(puuid) != normalized_teams.get(other_puuid):
@@ -139,6 +183,20 @@ def find_parties(
             if len(common_matches) >= 2:
                 graph[puuid].add(other_puuid)
                 graph[other_puuid].add(puuid)
+            elif len(common_matches) == 1:
+                verified_match = _verified_shared_match(
+                    puuid, other_puuid, common_matches, Requests_obj, log_func
+                )
+                if verified_match:
+                    graph[puuid].add(other_puuid)
+                    graph[other_puuid].add(puuid)
+                    verified_fallback_matches[frozenset((puuid, other_puuid))] = (
+                        verified_match
+                    )
+                    log_func(
+                        "Accepted one-match party evidence after roster verification "
+                        f"for {puuid} and {other_puuid}"
+                    )
 
     for puuid in sorted_puuids:
         if puuid in checked_puuids:
@@ -208,7 +266,15 @@ def find_parties(
                     if len(assigned_colors) >= len(PARTY_COLORS) * 2: break
                 assigned_colors.add(party_color)
 
-                log_func(f"Found party #{party_number_str} with color {party_color}: {current_party}")
+                fallback_count = sum(
+                    1
+                    for pair in verified_fallback_matches
+                    if pair.issubset(current_party)
+                )
+                log_func(
+                    f"Found party #{party_number_str} with color {party_color}: "
+                    f"{current_party} ({fallback_count} verified one-match link(s))"
+                )
 
                 assignment_value = (party_number_str, party_color)
 
