@@ -21,7 +21,6 @@ class Rank:
     #in future rewrite this code
     def get_rank(self, puuid, seasonID):
         response = self.get_request(puuid)
-        # pyperclip.copy(str(response.json()))
         final = {
             "rank": None,
             "rr": None,
@@ -34,11 +33,13 @@ class Rank:
             "statusgood": None,
             "statuscode": None,
             }
+        r = {}
         try:
-            if response.ok:
+            if response is not None and response.ok:
                 # self.log("retrieved rank successfully")
                 r = response.json()
-                rankTIER = r["QueueSkills"]["competitive"]["SeasonalInfoBySeasonID"][seasonID]["CompetitiveTier"]
+                season_data = r["QueueSkills"]["competitive"]["SeasonalInfoBySeasonID"][seasonID]
+                rankTIER = season_data["CompetitiveTier"]
                 if int(rankTIER) >= 21:
                     # rank = [rankTIER,
                             # r["QueueSkills"]["competitive"]["SeasonalInfoBySeasonID"][seasonID]["RankedRating"],
@@ -46,7 +47,7 @@ class Rank:
 
                     final["rank"] = rankTIER
                     final["rr"] = r["QueueSkills"]["competitive"]["SeasonalInfoBySeasonID"][seasonID]["RankedRating"]
-                    final["leaderboard"] = r["QueueSkills"]["competitive"]["SeasonalInfoBySeasonID"][seasonID]["LeaderboardRank"]
+                    final["leaderboard"] = season_data.get("LeaderboardRank") or 0
                 elif int(rankTIER) not in (0, 1, 2):
                     final["rank"] = rankTIER
                     final["rr"] = r["QueueSkills"]["competitive"]["SeasonalInfoBySeasonID"][seasonID]["RankedRating"]
@@ -62,7 +63,8 @@ class Rank:
 
             else:
                 self.log("failed getting rank")
-                self.log(response.text)
+                if response is not None:
+                    self.log(response.text)
                 final["rank"] = 0
                 final["rr"] = 0
                 final["leaderboard"] = 0
@@ -76,11 +78,14 @@ class Rank:
             final["leaderboard"] = 0
         max_rank = final["rank"]
         max_rank_season = seasonID
-        seasons = r["QueueSkills"]["competitive"].get("SeasonalInfoBySeasonID")
+        seasons = r.get("QueueSkills", {}).get("competitive", {}).get(
+            "SeasonalInfoBySeasonID"
+        )
         if seasons is not None:
-            for season in r["QueueSkills"]["competitive"]["SeasonalInfoBySeasonID"]:
-                if r["QueueSkills"]["competitive"]["SeasonalInfoBySeasonID"][season]["WinsByTier"] is not None:
-                    for winByTier in r["QueueSkills"]["competitive"]["SeasonalInfoBySeasonID"][season]["WinsByTier"]:
+            for season in seasons:
+                wins_by_tier = seasons[season].get("WinsByTier")
+                if wins_by_tier is not None:
+                    for winByTier in wins_by_tier:
                         if season in self.ranks_before:
                             if int(winByTier) > 20:
                                 winByTier = int(winByTier) + 3
@@ -107,41 +112,16 @@ class Rank:
 
         # rank.append(wr)
         final["wr"] = wr
-        final["statusgood"] = response.ok
-        final["statuscode"] = response.status_code
+        final["statusgood"] = response is not None and response.ok
+        final["statuscode"] = response.status_code if response is not None else None
         
 
         #peak rank act and ep
-        peak_rank_act_ep = self.content.get_act_episode_from_act_id(max_rank_season)
+        peak_rank_act_ep = (
+            self.content.get_act_episode_from_act_id(max_rank_season)
+            if max_rank_season
+            else {"act": None, "episode": None}
+        )
         final["peakrankact"] = peak_rank_act_ep["act"]
         final["peakrankep"] = peak_rank_act_ep["episode"]
         return final
-
-
-if __name__ == "__main__":
-    from constants import before_ascendant_seasons, version, NUMBERTORANKS
-    from requestsV import Requests
-    from logs import Logging
-    from errors import Error
-    import urllib3
-    import pyperclip
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-    Logging = Logging()
-    log = Logging.log
-
-    ErrorSRC = Error(log)
-
-    Requests = Requests(version, log, ErrorSRC)
-    #custom region
-    # Requests.pd_url = "https://pd.na.a.pvp.net"
-
-    #season id
-    s_id = "67e373c7-48f7-b422-641b-079ace30b427" 
-
-    r = Rank(Requests, log, before_ascendant_seasons)
-
-    res = r.get_rank("", s_id)
-    print(res)
-    #[[rank, rr, leadeboard, peak rank, wr,] status]
-    # print(f"Rank: {res[0][0]} - {NUMBERTORANKS[res[0][0]]}\nPeak Rank: {res[0][3]} - {NUMBERTORANKS[res[0][3]]}\nRR: {res[0][1]}\nLeaderboard: {res[0][2]}\nStatus is good: {res[1]}\nWR: {res[0][4]}%")

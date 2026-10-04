@@ -1,18 +1,18 @@
 @echo off
 cd /d "%~dp0"
-pythonw launcher.py
-```
 
-Using `pythonw` instead of `python` hides the console when running from source too.
+if exist ".venv\Scripts\pythonw.exe" (
+    start "" ".venv\Scripts\pythonw.exe" launcher.py
+    exit /b 0
+)
 
----
+if exist ".venv\Scripts\python.exe" (
+    echo pythonw.exe was not found. Starting visibly for diagnostics...
+    ".venv\Scripts\python.exe" launcher.py
+    pause
+    exit /b 1
+)
 
-### How it all fits together
-```
-vRY.exe  (Win32GUI, no terminal)
-    │
-    ├─► Thread: main.py logic runs normally in background
-    │       └─► WebSocket server starts on port 1100
-    │
-    └─► pywebview window opens vry-gui.html
-            └─► HTML connects to ws://localhost:1100 ✓
+echo Dependencies are not installed.
+echo Run INSTALL.bat first.
+pause

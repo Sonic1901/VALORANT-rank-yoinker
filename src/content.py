@@ -29,7 +29,7 @@ class Content():
         return None
 
     def get_all_agents(self):
-        rAgents = requests.get("https://valorant-api.com/v1/agents?isPlayableCharacter=true").json()
+        rAgents = requests.get("https://valorant-api.com/v1/agents?isPlayableCharacter=true", timeout=10).json()
         agent_dict = {}
         agent_dict.update({None: None})
         agent_dict.update({"": ""})
@@ -43,7 +43,7 @@ class Content():
         Requests data and assets of all maps.
         :return: JSON of all map information.
         """
-        return requests.get("https://valorant-api.com/v1/maps").json()
+        return requests.get("https://valorant-api.com/v1/maps", timeout=10).json()
 
     def get_map_urls(self, maps) -> dict:
         map_dict = {}

@@ -59,7 +59,7 @@ class AccountAuth:
         self.NUMBERTORANKS = NUMBERTORANKS
 
     def get_current_version(self):
-        return requests.get("https://valorant-api.com/v1/version").json()["data"]
+        return requests.get("https://valorant-api.com/v1/version", timeout=10).json()["data"]
 
         
 
@@ -79,7 +79,7 @@ class AccountAuth:
             'response_type': 'token id_token',
             "scope": "openid link ban lol_region account",
         }
-        r = self.session.post('https://auth.riotgames.com/api/v1/authorization', json=data, headers=self.headers)
+        r = self.session.post('https://auth.riotgames.com/api/v1/authorization', json=data, headers=self.headers, timeout=(3, 15))
         if username == None and password == None:
             if r.json().get("response") == None:
                 return None
@@ -94,7 +94,7 @@ class AccountAuth:
                         "username": username,
             }
 
-            r = self.session.put("https://auth.riotgames.com/api/v1/authorization", json=body, headers=self.headers)
+            r = self.session.put("https://auth.riotgames.com/api/v1/authorization", json=body, headers=self.headers, timeout=(3, 15))
             #check for 2fa
             if r.json().get("type") == "multifactor":
                 self.log("2fa detected")
@@ -104,7 +104,7 @@ class AccountAuth:
                     "code": self.ask_for_mfa(),
                     "remember": True
                 }
-                r = self.session.put("https://auth.riotgames.com/api/v1/authorization", json=body, headers=self.headers)
+                r = self.session.put("https://auth.riotgames.com/api/v1/authorization", json=body, headers=self.headers, timeout=(3, 15))
             if r.json().get("error") == "auth_failure":
                 return None
         pattern = re.compile(r'access_token=((?:[a-zA-Z]|\d|\.|-|_)*).*id_token=((?:[a-zA-Z]|\d|\.|-|_)*).*expires_in=(\d*)')
@@ -113,14 +113,14 @@ class AccountAuth:
         id_token = data[1]
         expires_in = data[2]
         expire_in_epoch = int(time.time()) + int(expires_in)
-        r_entitlements = self.session.post('https://entitlements.auth.riotgames.com/api/token/v1', headers={'Authorization': 'Bearer ' + access_token} | self.headers, json={})
+        r_entitlements = self.session.post('https://entitlements.auth.riotgames.com/api/token/v1', headers={'Authorization': 'Bearer ' + access_token} | self.headers, json={}, timeout=(3, 15))
         entitlements_token = r_entitlements.json()['entitlements_token']
         self.auth_headers.update({
             'Authorization': f"Bearer {access_token}",
             'X-Riot-Entitlements-JWT': entitlements_token})
-        r = requests.put("https://riot-geo.pas.si.riotgames.com/pas/v1/product/valorant", headers={'Authorization': 'Bearer ' + access_token}, json={"id_token": id_token})
+        r = requests.put("https://riot-geo.pas.si.riotgames.com/pas/v1/product/valorant", headers={'Authorization': 'Bearer ' + access_token}, json={"id_token": id_token}, timeout=(3, 15))
         self.region = r.json()["affinities"]["live"]
-        r = requests.post("https://auth.riotgames.com/userinfo", headers={'Authorization': 'Bearer ' + access_token})
+        r = requests.post("https://auth.riotgames.com/userinfo", headers={'Authorization': 'Bearer ' + access_token}, timeout=(3, 15))
         self.lol_region = r.json()["region"]["tag"]
 
         self.puuid = self.session.cookies.get_dict()["sub"]
@@ -133,14 +133,14 @@ class AccountAuth:
     def get_latest_season_id(self):
         self.log("get latest season id")
         if self.content is None:
-            self.content = requests.get(f"https://shared.{self.region}.a.pvp.net/content-service/v3/content", headers=self.auth_headers, verify=False)
+            self.content = requests.get(f"https://shared.{self.region}.a.pvp.net/content-service/v3/content", headers=self.auth_headers, verify=True, timeout=15)
         for season in self.content.json()["Seasons"]:
             if season["IsActive"]:
                 return season["ID"]
 
     def get_account_data(self):
         #if more advande account data wants to be supported requestsV needs to be edited so it can bue used with custom headers and not lockfile
-        r_mmr = requests.get(f"https://pd.{self.region}.a.pvp.net/mmr/v1/players/{self.puuid}", headers=self.auth_headers, verify=False)
+        r_mmr = requests.get(f"https://pd.{self.region}.a.pvp.net/mmr/v1/players/{self.puuid}", headers=self.auth_headers, verify=True, timeout=15)
         if r_mmr.json()["QueueSkills"]["competitive"].get("SeasonalInfoBySeasonID") is not None:
             season_info = r_mmr.json()["QueueSkills"]["competitive"]["SeasonalInfoBySeasonID"].get(self.get_latest_season_id())
             if season_info is not None:
@@ -150,14 +150,14 @@ class AccountAuth:
         else:
             rank = 0
         rank = self.escape_ansi(self.NUMBERTORANKS[rank])
-        name = requests.put(f"https://pd.{self.region}.a.pvp.net/name-service/v2/players", headers=self.auth_headers, json=[self.puuid]).json()
+        name = requests.put(f"https://pd.{self.region}.a.pvp.net/name-service/v2/players", headers=self.auth_headers, json=[self.puuid], timeout=(3, 15)).json()
         name = name[0]["GameName"] + "#" + name[0]["TagLine"]
-        r_account_xp = requests.get(f"https://pd.{self.region}.a.pvp.net/account-xp/v1/players/{self.puuid}", headers=self.auth_headers, verify=False)
+        r_account_xp = requests.get(f"https://pd.{self.region}.a.pvp.net/account-xp/v1/players/{self.puuid}", headers=self.auth_headers, verify=True, timeout=15)
         level = r_account_xp.json()["Progress"]["Level"]
-        contracts = requests.get("https://valorant-api.com/v1/contracts")
+        contracts = requests.get("https://valorant-api.com/v1/contracts", timeout=15)
         contracts = [a for a in contracts.json()["data"] if a["content"]["relationType"] == "Season"]
         bp = contracts[-1]
-        r_contracts = requests.get(f"https://pd.{self.region}.a.pvp.net/contracts/v1/contracts/{self.puuid}", headers=self.auth_headers, verify=False)
+        r_contracts = requests.get(f"https://pd.{self.region}.a.pvp.net/contracts/v1/contracts/{self.puuid}", headers=self.auth_headers, verify=True, timeout=15)
         for contract in r_contracts.json()["Contracts"]:
             if contract["ContractDefinitionID"] == bp["uuid"]:
                 bp_level = contract["ProgressionLevelReached"]

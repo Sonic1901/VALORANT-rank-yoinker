@@ -31,7 +31,7 @@
     color: var(--text);
     min-height: 100vh;
     overflow-x: hidden;
-    zoom: 1.18;
+    zoom: 1;
   }
 
   body::before {
@@ -56,12 +56,14 @@
     z-index: 100;
   }
 
+  .header-left { display:flex; align-items:center; gap:14px; }
   .logo { display: flex; align-items: center; gap: 10px; }
   .logo svg { width: 28px; height: 28px; }
   .logo-text { font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 20px; letter-spacing: 0.12em; color: #fff; }
   .logo-text span { color: var(--accent); }
 
   .header-right { display: flex; align-items: center; gap: 16px; }
+  .refresh-actions { display:flex; align-items:center; gap:6px; }
 
   .status-label {
     font-family: 'Share Tech Mono', monospace;
@@ -96,6 +98,11 @@
   .state-badge.ingame  { background:rgba(255,70,85,.12);  border-color:rgba(255,70,85,.4);  color:#ff8591; }
   .state-badge.pregame { background:rgba(103,237,76,.12); border-color:rgba(103,237,76,.4); color:#67ed4c; }
   .state-badge.menus   { background:rgba(238,241,54,.10); border-color:rgba(238,241,54,.35); color:#eef136; }
+  .nav-button { background:transparent; border:1px solid var(--border-bright); color:var(--text-muted); padding:7px 12px; border-radius:2px; cursor:pointer; font:600 10px 'Share Tech Mono',monospace; letter-spacing:.08em; text-transform:uppercase; }
+  .nav-button:hover, .nav-button.active { color:#fff; border-color:var(--accent); background:rgba(255,70,85,.12); }
+  .refresh-action { background:transparent; border:1px solid var(--border-bright); color:var(--text-muted); padding:7px 10px; border-radius:2px; cursor:pointer; font:600 9px 'Share Tech Mono',monospace; letter-spacing:.06em; text-transform:uppercase; }
+  .refresh-action:hover, .refresh-action.confirm { color:#fff; border-color:var(--accent); background:rgba(255,70,85,.12); }
+  .refresh-action:disabled { cursor:wait; opacity:.65; }
   .state-badge.waiting { background:rgba(90,96,122,.15);  border-color:rgba(90,96,122,.3);  color:var(--text-muted); }
 
   .map-info { font-family:'Rajdhani',sans-serif; font-weight:500; font-size:13px; color:var(--text-muted); letter-spacing:.06em; }
@@ -124,12 +131,22 @@
 
   .team-divider { height:1px; background:linear-gradient(90deg,transparent,var(--border-bright),transparent); margin:12px 0; }
   .players-grid { display:flex; flex-direction:column; gap:3px; }
+  .encounter-panel { margin-top:18px; padding:14px 16px; background:var(--surface); border:1px solid var(--border); border-radius:3px; }
+  .encounter-title { color:var(--text-muted); font:600 11px 'Rajdhani',sans-serif; letter-spacing:.14em; text-transform:uppercase; margin-bottom:8px; }
+  .encounter-line { color:var(--text-muted); font:12px 'Share Tech Mono',monospace; line-height:1.6; }
+  .history-cell { padding:0 10px; min-width:0; color:var(--text-muted); font:10px 'Share Tech Mono',monospace; line-height:1.35; }
+  .history-cell strong { display:block; color:var(--text-dim); font:600 9px 'Rajdhani',sans-serif; letter-spacing:.12em; text-transform:uppercase; }
+  .history-cell .history-name { overflow:hidden; color:var(--text); text-overflow:ellipsis; white-space:nowrap; }
+  .history-cell .history-muted { color:var(--text-dim); }
+  .summary-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:8px; margin-bottom:10px; }
+  .summary-card { padding:8px 10px; border:1px solid var(--border); background:var(--surface2); color:var(--text-muted); font:12px 'Share Tech Mono',monospace; line-height:1.5; }
+  .summary-card strong { color:var(--text); }
 
-  /* Grid: agent(52) | name(1fr) | current rank(185) | peak rank(185) | KD(70) | HS(90) | WinRate(80) | Level(70) */
+  /* Grid: agent | name | history | current rank | peak rank | KD | HS | win rate | level */
   .col-headers,
   .player-card {
     display: grid;
-    grid-template-columns: 52px minmax(130px,1fr) 185px 185px 70px 90px 80px 70px;
+    grid-template-columns: 52px minmax(130px,1fr) minmax(205px,1.25fr) 185px 185px 70px 90px 115px 70px;
     align-items: center;
   }
 
@@ -174,7 +191,8 @@
 
   /* Name cell */
   .name-cell { padding:0 12px; min-width:0; }
-  .player-name { font-family:'Rajdhani',sans-serif; font-weight:600; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:.03em; }
+  .player-name { font-family:'Rajdhani',sans-serif; font-weight:600; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:.03em; user-select:text; cursor:text; }
+  .player-name.name-masked { user-select:none; cursor:default; }
   .player-name.blue       { color: var(--blue); }
   .player-name.red        { color: var(--red); }
   .player-name.self-color { color: #dde041; }
@@ -232,11 +250,22 @@
 
 
   .wr-value { font-family:'Share Tech Mono',monospace; font-size:15px; font-weight:700; color:var(--text-muted); line-height:1; }
+  .stat-sub { color:var(--text-dim); font:9px 'Share Tech Mono',monospace; white-space:nowrap; }
   .kd-value { font-family:'Share Tech Mono',monospace; font-size:15px; font-weight:700; line-height:1; }
 
   /* Level */
   .level-cell { padding:0 10px; display:flex; align-items:center; justify-content:center; }
   .level-badge { font-family:'Share Tech Mono',monospace; font-size:12px; padding:2px 7px; border-radius:2px; border:1px solid; }
+
+  @media (max-width: 1200px) {
+    .col-headers,
+    .player-card {
+      grid-template-columns: 44px minmax(105px,1fr) minmax(165px,1.1fr) 150px 150px 60px 75px 100px 55px;
+    }
+    .history-cell { padding:0 6px; font-size:9px; }
+    .history-cell strong { font-size:8px; }
+    .col-header { padding:0 6px; font-size:8px; }
+  }
   .lv-1   { color:#d3d3d3; border-color:#333; }
   .lv-200 { color:#4747cc; border-color:#4747cc55; }
   .lv-300 { color:#cfcf4c; border-color:#cfcf4c55; }
@@ -253,18 +282,34 @@
   .connecting span { width:4px; height:4px; border-radius:50%; background:var(--text-dim); animation:bounce 1.2s infinite ease-in-out both; }
   .connecting span:nth-child(2){animation-delay:.2s} .connecting span:nth-child(3){animation-delay:.4s}
   @keyframes bounce { 0%,80%,100%{transform:scale(.7);opacity:.4} 40%{transform:scale(1);opacity:1} }
+  .loadout-view { position:fixed; inset:0; z-index:20; display:none; flex-direction:column; background:var(--bg); }
+  .refresh-button { position:absolute; left:150px; top:50%; transform:translateY(-50%); appearance:none; border:1px solid var(--border-bright); background:transparent; color:var(--text-muted); padding:7px 10px; border-radius:2px; cursor:pointer; font:600 10px 'Share Tech Mono',monospace; letter-spacing:.08em; text-transform:uppercase; }
+  .refresh-button:hover, .refresh-button:focus-visible { color:#fff; border-color:var(--accent); background:rgba(255,70,85,.12); outline:none; }
+  .refresh-button:disabled { opacity:.55; cursor:wait; }
+  .loadout-view.open { display:flex; }
+  .loadout-toolbar { display:flex; justify-content:flex-end; padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--border); }
+  .loadout-close { border:1px solid var(--border); background:transparent; color:var(--text-muted); padding:6px 14px; cursor:pointer; }
+  .loadout-close:hover { color:var(--text); border-color:var(--accent); }
+  .loadout-frame { border:0; flex:1; width:100%; background:var(--bg); }
+  .debug-status { position:absolute; left:50%; transform:translateX(-50%); top:100%; margin-top:6px; z-index:101; padding:4px 10px; background:rgba(16,18,26,.96); border:1px solid var(--border-bright); color:var(--text-muted); font:11px 'Share Tech Mono',monospace; white-space:nowrap; pointer-events:none; }
+  .debug-status.hidden { display:none; }
 </style>
 </head>
 <body>
 
 <header class="header">
-  <div class="logo">
-    <svg viewBox="0 0 28 28" fill="none">
-      <polygon points="14,2 26,26 2,26" fill="none" stroke="#ff4655" stroke-width="2"/>
-      <line x1="14" y1="10" x2="14" y2="20" stroke="#ff4655" stroke-width="1.5"/>
-      <circle cx="14" cy="22.5" r="1.4" fill="#ff4655"/>
-    </svg>
-    <div class="logo-text">VRY<span>.</span></div>
+  <div class="header-left">
+    <div class="logo">
+      <svg viewBox="0 0 28 28" fill="none" aria-label="VRY logo">
+        <polygon points="14,2 26,26 2,26" fill="none" stroke="#ff4655" stroke-width="2"/>
+        <line x1="14" y1="10" x2="14" y2="20" stroke="#ff4655" stroke-width="1.5"/>
+        <circle cx="14" cy="22.5" r="1.4" fill="#ff4655"/>
+      </svg>
+      <div class="logo-text">VRY<span>.</span></div>
+    </div>
+    <div class="refresh-actions">
+      <button id="refreshButton" class="refresh-action" type="button" title="Check the current VALORANT state">REFRESH</button>
+    </div>
   </div>
   <div class="header-right">
     <div class="status-label">
@@ -273,12 +318,20 @@
     </div>
     <div id="mapInfo" class="map-info" style="display:none"></div>
     <div id="stateBadge" class="state-badge waiting">WAITING</div>
+    <button id="trackerButton" class="nav-button active" type="button">TRACKER</button>
+    <button id="loadoutButton" class="nav-button" type="button">LOADOUTS</button>
   </div>
+  <div id="debugStatus" class="debug-status">Connecting to tracker backend...</div>
 </header>
 
 <main class="main">
   <div id="app"></div>
 </main>
+
+<section id="loadoutView" class="loadout-view" aria-label="Loadouts">
+  <div class="loadout-toolbar"><button id="loadoutClose" class="loadout-close" type="button">BACK TO RANKS</button></div>
+  <iframe id="loadoutFrame" class="loadout-frame" title="Match loadouts"></iframe>
+</section>
 
 <script>
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -332,6 +385,13 @@ function esc(s) {
   return String(s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatServer(server) {
+  if (!server) return '';
+  const value = Array.isArray(server) ? server[0] : server;
+  const parts = String(value).split('.');
+  return parts.length > 2 ? parts.slice(2).join('.') : String(value);
 }
 
 function hsColor(hs) {
@@ -389,7 +449,7 @@ function renderCard(p, idx) {
   const isSelf    = p.puuid === STATE.selfPuuid;
   const team      = p.team;
   const isAlly    = team && STATE.selfTeam && team === STATE.selfTeam;
-  const nameClass = isSelf ? 'self-color' : (team ? (isAlly ? 'blue' : 'red') : '');
+  const nameClass = `${isSelf ? 'self-color' : (team ? (isAlly ? 'blue' : 'red') : '')}${p.nameVisible === false ? ' name-masked' : ''}`;
 
   // Agent icon
   const agentImg  = STATE.agentImages[p.puuid] || p.agentImgLink;
@@ -405,19 +465,83 @@ function renderCard(p, idx) {
     : '';
 
   // Current rank
-  const currentRank = rankBlock(p.rank, p.rr !== undefined ? `${p.rr} RR` : '', '');
+  // Riot competitive tiers: Immortal 3 = 26, Radiant = 27.
+  const isLeaderboardRank = Number(p.rank) >= 24;
+  const leaderboardValue = Number(p.leaderboard);
+  const hasLeaderboard = isLeaderboardRank && Number.isFinite(leaderboardValue) && leaderboardValue > 0;
+  const leaderboard = hasLeaderboard ? ` · #${leaderboardValue.toLocaleString()}` : '';
+  const currentRank = rankBlock(
+    p.rank,
+    p.rr !== undefined ? `${p.rr} RR${leaderboard}` : '',
+    ''
+  );
 
-  // Peak rank
-  const peakRank = rankBlock(p.peakRank, p.peakRankAct || '', 'dim');
+  // Peak rank. Normalize legacy payloads here as well as in main.py so an
+  // already-running backend cannot reintroduce lowercase episode/act labels.
+  const peakAct = p.peakRankAct
+    ? String(p.peakRankAct).replace(/[()]/g, '').trim().toUpperCase()
+    : '';
+  const peakRank = rankBlock(p.peakRank, peakAct ? `(${peakAct})` : '', '');
 
   // HS
   const hsNum = parseInt(p.headshotPercentage);
   const hsClr = hsColor(p.headshotPercentage);
 
-  // Win Rate — strip bracketed game count e.g. "54 (120)" -> "54"
+  // Win Rate and total ranked games for the current act.
   const wrRaw = p.winPercentage !== undefined ? String(p.winPercentage) : 'N/A';
-  const wrNum = wrRaw.replace(/\s*\(.*?\)/, '').trim();
+  const wrMatch = wrRaw.match(/^\s*([^()]+?)\s*(?:\((\d+)\))?\s*$/);
+  const wrNum = wrMatch ? wrMatch[1].trim() : wrRaw;
+  const wrGames = wrMatch && wrMatch[2] ? wrMatch[2] : null;
+  const wrDisplay = wrGames ? `${wrNum}% (${wrGames})` : wrNum;
   const wrClr = wrColor(wrNum);
+
+  const subjectKey = p.puuid || p.Subject || p.subject;
+  const personal = isSelf ? STATE.personalSummary : null;
+  const premade = STATE.premadeSummaries[subjectKey]
+    || STATE.premadeSummaries[Object.keys(STATE.premadeSummaries)
+      .find((key) => key.toLowerCase() === String(subjectKey).toLowerCase())];
+  const encounter = STATE.encounters[subjectKey]
+    || STATE.encounters[Object.keys(STATE.encounters)
+      .find((key) => key.toLowerCase() === String(subjectKey).toLowerCase())];
+  let historyHtml = '<span class="history-muted">No history</span>';
+  if (personal?.count) {
+    const personalRate = personal.win_percentage == null ? '' : ` · ${personal.win_percentage}%`;
+    historyHtml = `<strong>Personal</strong>${personal.wins}W-${personal.losses}L (${personal.count})${personalRate}`;
+  } else if (premade) {
+    const generalRate = premade.overall_win_percentage == null ? '' : ` · ${premade.overall_win_percentage}%`;
+    const queuedRate = premade.queued_win_percentage == null ? '' : ` · ${premade.queued_win_percentage}%`;
+    historyHtml = `<strong>Premade</strong>General: ${premade.overall_wins}W-${premade.overall_losses}L (${premade.overall_count})${generalRate}<br><span class="history-muted">Queued: ${premade.queued_wins}W-${premade.queued_losses}L (${premade.queued_count})${queuedRate}</span>`;
+  } else if (encounter) {
+    const withRecord = `${encounter.ally_wins}W-${encounter.ally_losses}L`
+      + (encounter.ally_unknown ? ` (${encounter.ally_unknown} unknown)` : '');
+    const againstRecord = `${encounter.enemy_wins}W-${encounter.enemy_losses}L`
+      + (encounter.enemy_unknown ? ` (${encounter.enemy_unknown} unknown)` : '');
+    const lines = [];
+    if (encounter.ally_count) lines.push(`With: ${withRecord} (${encounter.ally_count})`);
+    if (encounter.enemy_count) lines.push(`Against: ${againstRecord} (${encounter.enemy_count})`);
+    const encounterTitle = encounter.previous_name ? 'Rare Encounter' : 'Encounter';
+    const relation = encounter.relation === 'enemy' ? 'Enemy' : 'Ally';
+    const age = formatEncounterAge(encounter.time_diff);
+    const ageSeconds = Math.max(0, Number(encounter.time_diff || 0));
+    const gameText = ageSeconds < 12 * 60 * 60
+      ? ` | ${Number(encounter.recent_games_ago || 1)} game${Number(encounter.recent_games_ago || 1) === 1 ? '' : 's'} ago`
+      : '';
+    const oldName = encounter.previous_name
+      ? ` | Old name: ${esc(encounter.previous_name)}`
+      : '';
+    const context = `${lines.join(' | ') || 'No completed records'} | ${esc(encounter.map || encounter.recent_map || 'Unknown')} | ${relation} ${esc(encounter.agent || encounter.recent_agent || 'Unknown')}`;
+    historyHtml = `<strong>${encounterTitle}: <span class="history-muted encounter-age">${age}${gameText}${oldName}</span></strong><span class="history-muted">${context}</span>`;
+  }
+
+  function formatEncounterAge(seconds) {
+    const ageSeconds = Math.max(0, Number(seconds || 0));
+    if (ageSeconds < 24 * 60 * 60) {
+      const hours = Math.max(1, Math.floor(ageSeconds / 3600));
+      return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+    }
+    const days = Math.floor(ageSeconds / 86400);
+    return `${days} day${days === 1 ? '' : 's'} ago`;
+  }
 
   // K/D
   const kdVal = p.kd !== undefined ? p.kd : 'N/A';
@@ -435,6 +559,7 @@ function renderCard(p, idx) {
         <div class="agent-sub">${esc(agentName)}</div>
       </div>
 
+      <div class="history-cell">${historyHtml}</div>
       ${currentRank}
       ${peakRank}
 
@@ -455,7 +580,7 @@ function renderCard(p, idx) {
       <div class="wr-cell">
         <div class="cell-label">Win Rate</div>
         <div class="stat-value-row">
-          <div class="wr-value" style="color:${wrClr}">${wrNum === 'N/A' ? 'N/A' : esc(wrNum) + '%'}</div>
+          <div class="wr-value" style="color:${wrClr}">${esc(wrDisplay)}</div>
         </div>
       </div>
 
@@ -482,6 +607,7 @@ function renderHeaders() {
     <div class="col-headers">
       <div class="col-header"></div>
       <div class="col-header">Player</div>
+      <div class="col-header">History</div>
       <div class="col-header">Current Rank</div>
       <div class="col-header">Peak Rank</div>
       <div class="col-header center">K/D</div>
@@ -500,6 +626,10 @@ const STATE = {
   map:         null,
   agentImages: {},
   agentNames:  {},
+  encounters: {},
+  personalSummary: null,
+  premadeSummaries: {},
+  server: null,
 };
 
 function render() {
@@ -525,7 +655,7 @@ function render() {
 
   const blue  = list.filter(p => p.team==='Blue');
   const red   = list.filter(p => p.team==='Red');
-  const other = list.filter(p => !p.team);
+  const other = list.filter(p => !['Blue', 'Red'].includes(p.team));
 
   let html = renderHeaders();
 
@@ -561,13 +691,27 @@ function updateHeader(gs) {
   badge.textContent = lbl[gs] || (gs||'WAITING');
 
   const m = Array.isArray(STATE.map) ? STATE.map[0] : STATE.map;
-  if (m) { map.textContent=m; map.style.display=''; }
+  if (m) {
+    const serverName = formatServer(STATE.server);
+    const server = serverName ? ` - ${serverName}` : '';
+    map.textContent=m + server;
+    map.style.display='';
+  }
   else   { map.style.display='none'; }
+}
+
+function updateDebug(message, hide = false) {
+  const debug = document.getElementById('debugStatus');
+  if (!debug) return;
+  debug.textContent = message;
+  debug.classList.toggle('hidden', hide);
 }
 
 function setConnected(ok) {
   document.getElementById('statusDot').className  = 'status-dot '+(ok?'connected':'error');
-  document.getElementById('statusText').textContent = ok?'LIVE':'DISCONNECTED';
+  document.getElementById('statusText').textContent = ok?'CONNECTED':'DISCONNECTED';
+  if (ok) updateDebug('Connected; waiting for live match data...');
+  else updateDebug('Tracker backend disconnected; retrying...');
 }
 
 // ── WebSocket handlers ────────────────────────────────────────────────────────
@@ -575,6 +719,10 @@ function handleHeartbeat(data) {
   STATE.gameState = data.state;
   STATE.selfPuuid = data.puuid;
   STATE.map       = data.map;
+  STATE.server    = data.server || null;
+  STATE.encounters = data.encounters || {};
+  STATE.personalSummary = data.personalSummary || null;
+  STATE.premadeSummaries = data.premadeSummaries || {};
   STATE.selfTeam  = data.players?.[data.puuid]?.team || null;
 
   const next = {};
@@ -584,11 +732,12 @@ function handleHeartbeat(data) {
       ...prev, puuid,
       name:               p.name,
       team:               p.team,
-      agent:              p.agent,
+      agent:              p.agent || prev.agent,
       rank:               p.rank,
       peakRank:           p.peakRank,
       peakRankAct:        p.peakRankAct,
       rr:                 p.rr,
+      leaderboard:        p.leaderboard,
       headshotPercentage: p.headshotPercentage,
       winPercentage:      p.winPercentage,
       kd:                 p.kd,
@@ -599,6 +748,11 @@ function handleHeartbeat(data) {
   });
   STATE.players = next;
   updateHeader(STATE.gameState);
+  if (Object.keys(STATE.players).length) {
+    updateDebug('Live match data connected', true);
+  } else {
+    updateDebug('VALORANT detected; waiting for player data...');
+  }
   render();
 }
 
@@ -649,6 +803,39 @@ function schedule() {
   await loadRankIcons();
   render();
 })();
+
+function showTrackerView() {
+  document.getElementById('loadoutView').classList.remove('open');
+  document.getElementById('trackerButton').classList.add('active');
+  document.getElementById('loadoutButton').classList.remove('active');
+}
+
+document.getElementById('trackerButton').addEventListener('click', showTrackerView);
+document.getElementById('loadoutClose').addEventListener('click', showTrackerView);
+document.getElementById('refreshButton').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  if (!window.pywebview || !window.pywebview.api?.refresh) return;
+  button.disabled = true;
+  button.textContent = 'CHECKING...';
+  try {
+    await window.pywebview.api.refresh();
+  } finally {
+    setTimeout(() => {
+      button.disabled = false;
+      button.textContent = 'REFRESH';
+    }, 700);
+  }
+});
+
+document.getElementById('loadoutButton').addEventListener('click', async () => {
+  if (!window.pywebview || !window.pywebview.api) return;
+  const url = await window.pywebview.api.get_tracker_url();
+  if (!url) return;
+  document.getElementById('loadoutFrame').src = url;
+  document.getElementById('loadoutView').classList.add('open');
+  document.getElementById('trackerButton').classList.remove('active');
+  document.getElementById('loadoutButton').classList.add('active');
+});
 </script>
 </body>
 </html>

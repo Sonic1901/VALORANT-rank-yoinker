@@ -1,5 +1,4 @@
-import InquirerPy, subprocess, re
-import ctypes
+import InquirerPy
 from InquirerPy import inquirer
 
 

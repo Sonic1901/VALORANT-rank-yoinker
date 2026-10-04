@@ -67,13 +67,13 @@ class Config:
         return self.__dict__.get("table", DEFAULT_CONFIG["flags"]).get(key, DEFAULT_CONFIG["table"][key])         
 
     def config_dialog(self, fileToWrite: TextIOWrapper):
-        self.log("color config prompt called")
+        self.log("writing default configuration")
         jsonToWrite = DEFAULT_CONFIG
         json.dump(jsonToWrite, fileToWrite, indent=4)
         return jsonToWrite
 
     def weapon_check(self, name):
-        if name in [weapon["displayName"] for weapon in requests.get("https://valorant-api.com/v1/weapons").json()["data"]]:
+        if name in [weapon["displayName"] for weapon in requests.get("https://valorant-api.com/v1/weapons", timeout=10).json()["data"]]:
             return True
         else:
             return False

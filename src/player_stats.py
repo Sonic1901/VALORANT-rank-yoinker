@@ -111,22 +111,3 @@ class PlayerStats:
             "AFKPenalty": afk_penalty,
         }
         return final_stats
-
-
-if __name__ == "__main__":
-    from constants import version
-    from requestsV import Requests
-    from logs import Logging
-    from errors import Error
-    import urllib3
-
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-    Logging = Logging()
-    log = Logging.log
-    ErrorSRC = Error(log)
-    Requests = Requests(version, log, ErrorSRC)
-
-    player_stats = PlayerStats(Requests, log, "a")
-    result = player_stats.get_stats("963ad672-61e1-537e-8449-06ece1a5ceb7")
-    print(result)

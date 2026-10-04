@@ -1,11 +1,10 @@
 from typing import Literal, get_args
 
-# from prettytable import PrettyTable
 from rich.table import Table as RichTable
 from rich.console import Console as RichConsole
 
-# define constants for all column headers
-# avoids "magic strings"
+# Column names are kept in one place so runtime visibility changes remain
+# consistent with the table definition.
 HEADER_PARTY = "Party"
 HEADER_AGENT = "Agent"
 HEADER_NAME = "Name"
@@ -84,7 +83,6 @@ class Table:
         ]
         self.console = RichConsole(color_system="truecolor")
 
-        # only to get init value not used
         self.overall_col_flags = [
             f1 & f2 for f1, f2 in zip(self.col_flags, self.runtime_col_flags)
         ]
@@ -94,9 +92,6 @@ class Table:
             if flag
         ]
 
-        # for field in fields_to_display:
-        #     self.rich_table.add_column(field, justify="center")
-        # self.set_collumns()
         self.rows = []
 
     def set_title(self, title):
@@ -112,15 +107,9 @@ class Table:
         self.rich_table.field_names = field_names
 
     def add_row_table(self, args: list):
-        # row = [c for c, i in zip(args, self.col_flags) if i]
-        # row = [self.ansi_to_console(str(i)) for i in row]
         self.rows.append(zip(self.field_names_candidates, args))
 
-        # self.rich_table.add_row(*row)
-
     def add_empty_row(self):
-        # empty_row = [""] * sum(self.col_flags)
-        # self.rich_table.add_row(*empty_row)
         self.rows.append(
             zip(self.field_names_candidates, [""] * len(self.field_names_candidates))
         )
@@ -158,8 +147,6 @@ class Table:
         self.rich_table.title_style = "bold"
         self.rich_table.caption_style = "italic rgb(50,505,50)"
         self.rich_table.caption_justify = "left"
-
-        pass
 
     def ansi_to_console(self, line):
         if "\x1b[38;2;" not in line:

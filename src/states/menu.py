@@ -5,9 +5,11 @@ class Menu:
         self.presences = presences
 
     def get_party_json(self, GamePlayersPuuid, presencesDICT):
+        game_players = {str(puuid).lower() for puuid in GamePlayersPuuid}
         party_json = {}
         for presence in presencesDICT:
-            if presence["puuid"] in GamePlayersPuuid:
+            presence_puuid = str(presence.get("puuid", "")).lower()
+            if presence_puuid in game_players:
                 decodedPresence = self.presences.decode_presence(presence["private"])
                 if decodedPresence["isValid"]:
                     
@@ -45,9 +47,10 @@ class Menu:
     def get_party_members(self, self_puuid, presencesDICT):
         res = []
         party_id = ""
+        self_puuid = str(self_puuid).lower()
         
         for presence in presencesDICT:
-            if presence["puuid"] == self_puuid:
+            if str(presence.get("puuid", "")).lower() == self_puuid:
                 decodedPresence = self.presences.decode_presence(presence["private"])
                 if decodedPresence["isValid"]:
                     
@@ -68,7 +71,7 @@ class Menu:
         
         # Find other party members
         for presence in presencesDICT:
-            if presence["puuid"] == self_puuid:
+            if str(presence.get("puuid", "")).lower() == self_puuid:
                 continue # Skip self
                 
             decodedPresence = self.presences.decode_presence(presence["private"])
@@ -88,7 +91,7 @@ class Menu:
                     self.log("ERROR: Unknown presence API structure in 'get_party_members'.")
                     current_party_id = decodedPresence["partyPresenceData"]["partyId"]
 
-                if current_party_id == party_id:
+                if current_party_id and current_party_id == party_id:
                     res.append({"Subject": presence["puuid"], "PlayerIdentity": {"AccountLevel": account_level}})
                     
         self.log(f"retrieved party members: {res}")

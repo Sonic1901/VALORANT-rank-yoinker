@@ -7,6 +7,10 @@ import traceback
 
 import requests
 import urllib3
+
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 from src.colors import color as colr
 from InquirerPy import inquirer
 from rich.console import Console as RichConsole
@@ -30,6 +34,8 @@ from src.states.coregame import Coregame
 from src.states.menu import Menu
 from src.states.pregame import Pregame
 from src.stats import Stats
+from src.party_finder import clear_party_history_cache, find_parties
+from src.refresh_control import menu_check_requested
 from src.table import Table
 from src.websocket import Ws
 from src.os_info import get_os
@@ -88,11 +94,14 @@ try:
 
     ErrorSRC = Error(log, acc_manager)
 
-    Requests.check_version(version, Requests.copy_run_update_script)
-    Requests.check_status()
+    # Automatic update/status checks remain available for a future public
+    # release, but are intentionally disabled while this fork is being cleaned.
     Requests = Requests(version, log, ErrorSRC)
 
     cfg = Config(log)
+    # Keep cosmetic weapon and delta-RR columns confined to the loadout view.
+    cfg.table["skin"] = False
+    cfg.table["earned_rr"] = False
 
     content = Content(Requests, log)
 
@@ -121,9 +130,15 @@ try:
     colors = Colors(log, hide_names, agent_dict, AGENTCOLORLIST, tierDict)
 
     loadoutsClass = Loadouts(Requests, log, colors, Server, current_map)
+    loadoutsClass.prime_metadata_async()
     table = Table(cfg, log)
 
     stats = Stats()
+    active_match_id = None
+    active_my_team = None
+    pending_match_result = None
+    party_detection_match_id = None
+    party_assignments = {}
 
     if cfg.get_feature_flag("discord_rpc"):
         rpc = Rpc(map_urls, gamemodes, colors, log)
@@ -209,7 +224,11 @@ try:
         )
     )
 
-    richConsole = RichConsole()
+    richConsole = RichConsole(
+        legacy_windows=False,
+        force_terminal=False,
+        color_system=None,
+    )
 
     firstTime = True
     firstPrint = True
@@ -217,6 +236,9 @@ try:
         table.clear()
         table.set_default_field_names()
         table.reset_runtime_col_flags()
+        # Menu heartbeats also build history summaries, but party membership is
+        # only collected for match states. Keep the per-cycle value defined.
+        partyMembersList = []
 
         # check if short ranks should be used
         if cfg.get_feature_flag("short_ranks"):
@@ -249,15 +271,57 @@ try:
             else:
                 previous_game_state = game_state
                 game_state = asyncio.run(
-                    Wss.recconect_to_websocket(game_state)
+                    Wss.reconnect_to_websocket(game_state)
                 )
+                if previous_game_state == "INGAME" and game_state != "INGAME":
+                    if active_match_id and active_my_team:
+                        pending_match_result = {
+                            "match_id": active_match_id,
+                            "my_team": active_my_team,
+                            "attempts": 0,
+                            "next_attempt": 0,
+                        }
+                    active_match_id = None
+                    active_my_team = None
                 # We invalidate the cached responses when going from any state to menus
                 if previous_game_state != game_state and game_state == "MENUS":
                     rank.invalidate_cached_responses()
                     reset_match_player_cache()
+                    clear_party_history_cache(Requests)
                     if hasattr(pstats, "clear_runtime_cache"):
                         pstats.clear_runtime_cache()
                 log(f"new game state: {game_state}")
+                if pending_match_result and game_state != "INGAME":
+                    pending_match_result["attempts"] += 1
+                    try:
+                        result = Requests.fetch(
+                            "pd",
+                            f"/match-details/v1/matches/{pending_match_result['match_id']}",
+                            "get",
+                        )
+                        if result.ok:
+                            details = result.json()
+                            match_info = details.get("matchInfo", {})
+                            winning_team = match_info.get("winningTeam")
+                            scores = {
+                                team.get("teamId"): team.get("roundsWon", 0)
+                                for team in details.get("teams", [])
+                                if team.get("teamId")
+                            }
+                            if not winning_team and scores:
+                                winning_team = max(scores, key=scores.get)
+                            if winning_team:
+                                stats.update_match_result(
+                                    pending_match_result["match_id"],
+                                    pending_match_result["my_team"],
+                                    winning_team,
+                                )
+                                pending_match_result = None
+                    except Exception as exc:
+                        log(f"encounter result update failed: {exc}")
+                    if pending_match_result and pending_match_result["attempts"] >= 5:
+                        log("match result unavailable after 5 bounded attempts")
+                        pending_match_result = None
             firstTime = False
             # loop = asyncio.new_event_loop()
             # asyncio.set_event_loop(loop)
@@ -322,22 +386,21 @@ try:
             if priv_presence is None:
                 time.sleep(2)
                 continue
-            if "partyPresenceData" in priv_presence: # Check for nested structure
-                party_state = priv_presence["partyPresenceData"]["partyState"]
-            elif "partyState" in priv_presence: # Check for flattened structure
-                party_state = priv_presence["partyState"]
-            else:
-                # No known structure found, log and fail
-                log("ERROR: Unknown presence API structure in 'main'.")
-                party_state = priv_presence["partyPresenceData"]["partyState"]
-            
+            party_presence = priv_presence.get("partyPresenceData")
+            if isinstance(party_presence, dict):
+                party_state = party_presence.get("partyState", "")
+            if not party_state:
+                party_state = priv_presence.get("partyState", "")
+            if not party_state:
+                log("Presence payload has no party state; continuing with unknown party state.")
+
             if (
-                priv_presence["provisioningFlow"] == "CustomGame"
+                priv_presence.get("provisioningFlow") == "CustomGame"
                 or party_state == "CUSTOM_GAME_SETUP"
             ):
                 gamemode = "Custom Game"
             else:
-                gamemode = gamemodes.get(priv_presence["queueId"])
+                gamemode = gamemodes.get(priv_presence.get("queueId"), "Unknown")
 
             heartbeat_data = {
                 "time": int(time.time()),
@@ -352,11 +415,26 @@ try:
                 if coregame_stats == None:
                     continue
                 coregame_match_id = coregame.get_coregame_match_id()
+                active_match_id = coregame_match_id
                 ensure_match_player_cache(coregame_match_id)
                 Players = coregame_stats["Players"]
+                # Encounter history must use the map for this match, not the
+                # map captured when the application originally started.
+                match_map_name = map_urls.get(
+                    str(coregame_stats.get("MapID", "")).lower()
+                )
+                if match_map_name:
+                    current_map = {
+                        "name": match_map_name,
+                        "splash": map_splashes.get(match_map_name),
+                    }
                 # data for chat to function
                 partyMembers = menu.get_party_members(Requests.puuid, presence)
-                partyMembersList = [a["Subject"] for a in partyMembers]
+                partyMembersList = [
+                    str(a["Subject"]).lower()
+                    for a in partyMembers
+                    if a.get("Subject")
+                ]
 
                 players_data = {}
                 players_data.update({"ignore": partyMembersList})
@@ -417,16 +495,64 @@ try:
                     for p in Players:
                         if p["Subject"] == Requests.puuid:
                             allyTeam = p["TeamID"]
+                    active_my_team = allyTeam
+                    if party_detection_match_id != coregame_match_id:
+                        party_detection_match_id = coregame_match_id
+                        party_assignments = {}
+                    current_party_subjects = {
+                        str(subject).lower() for subject in partyMembersList
+                    }
+                    if cfg.get_feature_flag("party_finder"):
+                        try:
+                            party_assignments = find_parties(
+                                [p["Subject"] for p in Players],
+                                Requests,
+                                log,
+                                {p["Subject"]: p["TeamID"] for p in Players},
+                                current_party_subjects,
+                            )
+                        except Exception as exc:
+                            log(f"party history detection failed: {exc}")
+                    # Riot presence is authoritative for the current party.
+                    # Keep the history finder for parties whose presence payload
+                    # is incomplete, but always give the current party a shared
+                    # visible marker when it contains another roster member.
+                    if len(current_party_subjects) > 1:
+                        used_party_numbers = {
+                            int(value[0])
+                            for value in party_assignments.values()
+                            if value and str(value[0]).isdigit()
+                        }
+                        current_party_number = max(used_party_numbers, default=0) + 1
+                        current_party_assignment = (
+                            str(current_party_number),
+                            PARTYICONLIST[
+                                (current_party_number - 1) % len(PARTYICONLIST)
+                            ],
+                        )
+                        # Remove any historical assignment that would
+                        # otherwise reuse the current-party marker.
+                        party_assignments = {
+                            subject: value
+                            for subject, value in party_assignments.items()
+                            if subject not in current_party_subjects
+                        }
+                        for subject in current_party_subjects:
+                            party_assignments[subject] = current_party_assignment
                     for player in Players:
                         status.update(
                             f"Loading players... [{playersLoaded}/{len(Players)}]"
                         )
                         playersLoaded += 1
+                        partyNum = 0
 
-                        if player["Subject"] in stats_data.keys():
+                        player_subject = str(player["Subject"]).lower()
+                        if player_subject in {
+                            str(subject).lower() for subject in stats_data.keys()
+                        }:
                             if (
                                 player["Subject"] != Requests.puuid
-                                and player["Subject"] not in partyMembersList
+                                and player_subject not in partyMembersList
                             ):
                                 curr_player_stat = stats_data[player["Subject"]][-1]
                                 i = 1
@@ -479,9 +605,22 @@ try:
                                         )
 
                         party_icon = ""
+                        assignment = party_assignments.get(
+                            str(player["Subject"]).lower()
+                        )
+                        if assignment:
+                            partyNum = int(assignment[0])
+                        if assignment and cfg.get_feature_flag("party_colorblind"):
+                            party_icon = f"[{assignment[1]}]{assignment[0]}[/]"
                         # set party premade icon
                         for party in partyOBJ:
-                            if player["Subject"] in partyOBJ[party]:
+                            if party_icon:
+                                break
+                            if any(
+                                str(member).lower()
+                                == str(player["Subject"]).lower()
+                                for member in partyOBJ[party]
+                            ):
                                 if party not in partyIcons:
                                     partyIcons.update(
                                         {party: PARTYICONLIST[partyCount]}
@@ -554,7 +693,7 @@ try:
                         if player["PlayerIdentity"]["HideAccountLevel"]:
                             if (
                                 player["Subject"] == Requests.puuid
-                                or player["Subject"] in partyMembersList
+                                or str(player["Subject"]).lower() in partyMembersList
                                 or hide_levels == False
                             ):
                                 PLcolor = colors.level_to_color(player_level)
@@ -594,15 +733,15 @@ try:
                             c.isalpha() for c in str(playerRank["peakrankep"])
                         )
                         peakRankAct = (
-                            f" ({playerRank['peakrankep']}a{playerRank['peakrankact']})"
+                            f"{str(playerRank['peakrankep']).upper()}A{playerRank['peakrankact']}"
                             if has_letter
-                            else f" (e{playerRank['peakrankep']}a{playerRank['peakrankact']})"
+                            else f"E{playerRank['peakrankep']}A{playerRank['peakrankact']}"
                         )
                         if not cfg.get_feature_flag("peak_rank_act"):
                             peakRankAct = ""
 
                         # PEAK RANK
-                        peakRank = Ranks[playerRank["peakrank"]] + peakRankAct
+                        peakRank = Ranks[playerRank["peakrank"]] + (f" ({peakRankAct})" if peakRankAct else "")
 
                         # PREVIOUS RANK
                         previousRank = Ranks[previousPlayerRank["rank"]]
@@ -644,12 +783,14 @@ try:
                         heartbeat_data["players"][player["Subject"]] = {
                             "puuid": player["Subject"],
                             "name": names[player["Subject"]],
-                            "partyNumber": partyNum if party_icon != "" else 0,
+                            "nameVisible": not player["PlayerIdentity"]["Incognito"],
+                            "partyNumber": partyNum,
                             "agent": agent_dict.get(player["CharacterID"].lower(), "Unknown"),
                             "rank": playerRank["rank"],
                             "peakRank": playerRank["peakrank"],
                             "peakRankAct": peakRankAct,
                             "rr": rr,
+                            "leaderboard": playerRank.get("leaderboard") or 0,
                             "kd": ppstats["kd"],
                             "headshotPercentage": ppstats["hs"],
                             "winPercentage": f"{playerRank['wr']} ({playerRank['numberofgames']})",
@@ -664,12 +805,38 @@ try:
                             {
                                 player["Subject"]: {
                                     "name": names[player["Subject"]],
-                                    "agent": agent_dict.get(player["CharacterID"].lower(), "Unknown"),
+                                    "agent": agent_dict.get(
+                                        str(
+                                            player.get("CharacterID")
+                                            or player.get("Agent")
+                                            or player.get("AgentID")
+                                            or ""
+                                        ).lower(),
+                                        "Unknown",
+                                    ),
                                     "map": current_map,
                                     "rank": playerRank["rank"],
                                     "rr": rr,
+                                    "leaderboard": playerRank.get("leaderboard") or 0,
                                     "match_id": coregame.match_id,
                                     "epoch": time.time(),
+                                    "relation": (
+                                        "self"
+                                        if player["Subject"] == Requests.puuid
+                                        else (
+                                            "premade"
+                                            if str(player["Subject"]).lower() in partyMembersList
+                                            else (
+                                                "ally"
+                                                if player["TeamID"] == active_my_team
+                                                else "enemy"
+                                            )
+                                        )
+                                    ),
+                                    "premade": (
+                                        player["Subject"] != Requests.puuid
+                                        and str(player["Subject"]).lower() in partyMembersList
+                                    ),
                                 }
                             }
                         )
@@ -695,8 +862,47 @@ try:
                     partyOBJ = menu.get_party_json(
                         namesClass.get_players_puuid(Players), presence
                     )
+                    pregame_party_assignments = {}
                     partyMembers = menu.get_party_members(Requests.puuid, presence)
-                    partyMembersList = [a["Subject"] for a in partyMembers]
+                    partyMembersList = [
+                        str(a["Subject"]).lower()
+                        for a in partyMembers
+                        if a.get("Subject")
+                    ]
+                    current_party_subjects = set(partyMembersList)
+                    if cfg.get_feature_flag("party_finder"):
+                        try:
+                            pregame_party_assignments = find_parties(
+                                [p["Subject"] for p in Players],
+                                Requests,
+                                log,
+                                {p["Subject"]: "Ally" for p in Players},
+                                current_party_subjects,
+                            )
+                        except Exception as exc:
+                            log(f"pregame party history detection failed: {exc}")
+                    if len(partyMembersList) > 1:
+                        used_party_numbers = {
+                            int(value[0])
+                            for value in pregame_party_assignments.values()
+                            if value and str(value[0]).isdigit()
+                        }
+                        current_party_number = max(used_party_numbers, default=0) + 1
+                        current_party_assignment = (
+                            str(current_party_number),
+                            PARTYICONLIST[
+                                (current_party_number - 1) % len(PARTYICONLIST)
+                            ],
+                        )
+                        pregame_party_assignments = {
+                            subject: value
+                            for subject, value in pregame_party_assignments.items()
+                            if subject not in current_party_subjects
+                        }
+                        for subject in partyMembersList:
+                            pregame_party_assignments[subject] = (
+                                current_party_assignment
+                            )
                     # log(f"retrieved names dict: {names}")
                     Players.sort(
                         key=lambda Players: Players["PlayerIdentity"].get(
@@ -711,11 +917,30 @@ try:
                             f"Loading players... [{playersLoaded}/{len(Players)}]"
                         )
                         playersLoaded += 1
+                        partyNum = 0
+                        character_id = str(
+                            player.get("CharacterID")
+                            or player.get("Agent")
+                            or player.get("AgentID")
+                            or ""
+                        ).lower()
                         party_icon = ""
-
+                        assignment = pregame_party_assignments.get(
+                            str(player["Subject"]).lower()
+                        )
+                        if assignment:
+                            partyNum = int(assignment[0])
+                        if assignment and cfg.get_feature_flag("party_colorblind"):
+                            party_icon = f"[{assignment[1]}]{assignment[0]}[/]"
                         # set party premade icon
                         for party in partyOBJ:
-                            if player["Subject"] in partyOBJ[party]:
+                            if party_icon:
+                                break
+                            if any(
+                                str(member).lower()
+                                == str(player["Subject"]).lower()
+                                for member in partyOBJ[party]
+                            ):
                                 if party not in partyIcons:
                                     partyIcons.update(
                                         {party: PARTYICONLIST[partyCount]}
@@ -769,7 +994,7 @@ try:
                                 names[player["Subject"]],
                                 player["Subject"],
                                 Requests.puuid,
-                                agent=player["CharacterID"],
+                                agent=character_id,
                                 party_members=partyMembersList,
                             )
                         else:
@@ -784,7 +1009,7 @@ try:
                         if player["PlayerIdentity"]["HideAccountLevel"]:
                             if (
                                 player["Subject"] == Requests.puuid
-                                or player["Subject"] in partyMembersList
+                                or str(player["Subject"]).lower() in partyMembersList
                                 or hide_levels == False
                             ):
                                 PLcolor = colors.level_to_color(player_level)
@@ -794,17 +1019,17 @@ try:
                             PLcolor = colors.level_to_color(player_level)
                         if player["CharacterSelectionState"] == "locked":
                             agent_color = color(
-                                agent_dict.get(player["CharacterID"].lower(), "Unknown"),
+                                agent_dict.get(character_id, "Unknown"),
                                 fore=(255, 255, 255),
                             )
                         elif player["CharacterSelectionState"] == "selected":
                             agent_color = color(
-                                agent_dict.get(player["CharacterID"].lower(), "Unknown"),
+                                agent_dict.get(character_id, "Unknown"),
                                 fore=(128, 128, 128),
                             )
                         else:
                             agent_color = color(
-                                agent_dict.get(player["CharacterID"].lower(), "Unknown"),
+                                agent_dict.get(character_id, "Unknown"),
                                 fore=(54, 53, 51),
                             )
 
@@ -836,14 +1061,14 @@ try:
                             c.isalpha() for c in str(playerRank["peakrankep"])
                         )
                         peakRankAct = (
-                            f" ({playerRank['peakrankep']}a{playerRank['peakrankact']})"
+                            f"{str(playerRank['peakrankep']).upper()}A{playerRank['peakrankact']}"
                             if has_letter
-                            else f" (e{playerRank['peakrankep']}a{playerRank['peakrankact']})"
+                            else f"E{playerRank['peakrankep']}A{playerRank['peakrankact']}"
                         )
                         if not cfg.get_feature_flag("peak_rank_act"):
                             peakRankAct = ""
                         # PEAK RANK
-                        peakRank = Ranks[playerRank["peakrank"]] + peakRankAct
+                        peakRank = Ranks[playerRank["peakrank"]] + (f" ({peakRankAct})" if peakRankAct else "")
 
                         # PREVIOUS RANK
                         previousRank = Ranks[previousPlayerRank["rank"]]
@@ -885,13 +1110,14 @@ try:
 
                         heartbeat_data["players"][player["Subject"]] = {
                             "name": names[player["Subject"]],
-                            "partyNumber": partyNum if party_icon != "" else 0,
-                            "agent": agent_dict.get(player["CharacterID"].lower(), "Unknown"),
+                            "partyNumber": partyNum,
+                            "agent": agent_dict.get(character_id, "Unknown"),
                             "rank": playerRank["rank"],
                             "peakRank": playerRank["peakrank"],
                             "peakRankAct": peakRankAct,
                             "level": player_level,
                             "rr": rr,
+                            "leaderboard": playerRank.get("leaderboard") or 0,
                             "kd": ppstats["kd"],
                             "headshotPercentage": ppstats["hs"],
                             "winPercentage": f"{playerRank['wr']} ({playerRank['numberofgames']})",
@@ -906,14 +1132,19 @@ try:
                 server = ""
                 already_played_with = []
                 Players = menu.get_party_members(Requests.puuid, presence)
+                partyMembersList = [
+                    str(player["Subject"]).lower()
+                    for player in Players
+                    if player.get("Subject")
+                ]
                 names = namesClass.get_names_from_puuids(Players)
                 playersLoaded = 1
                 with richConsole.status("Loading Players...") as status:
                     # with alive_bar(total=len(Players), title='Fetching Players', bar='classic2') as bar:
                     # log(f"retrieved names dict: {names}")
                     Players.sort(
-                        key=lambda Players: Players["PlayerIdentity"].get(
-                            "AccountLevel"
+                        key=lambda player: (player.get("PlayerIdentity") or {}).get(
+                            "AccountLevel", 0
                         ),
                         reverse=True,
                     )
@@ -963,14 +1194,17 @@ try:
                                 rr_numeric_value, afk_penalty
                             )
 
-                            player_level = player["PlayerIdentity"].get("AccountLevel")
+                            player_level = (player.get("PlayerIdentity") or {}).get(
+                                "AccountLevel", 0
+                            )
                             PLcolor = colors.level_to_color(player_level)
 
                             # AGENT
                             agent = ""
 
                             # NAME
-                            name = color(names[player["Subject"]], fore=(76, 151, 237))
+                            display_name = names.get(player["Subject"], "#")
+                            name = color(display_name, fore=(76, 151, 237))
 
                             # RANK
                             rankName = Ranks[playerRank["rank"]]
@@ -987,17 +1221,15 @@ try:
                                 c.isalpha() for c in str(playerRank["peakrankep"])
                             )
                             peakRankAct = (
-                                f" ({playerRank['peakrankep']}a{playerRank['peakrankact']})"
+                                f"{str(playerRank['peakrankep']).upper()}A{playerRank['peakrankact']}"
                                 if has_letter
-                                else f" (e{playerRank['peakrankep']}a{playerRank['peakrankact']})"
+                                else f"E{playerRank['peakrankep']}A{playerRank['peakrankact']}"
                             )
                             if not cfg.get_feature_flag("peak_rank_act"):
                                 peakRankAct = ""
 
                             # PEAK RANK
-                            peakRank = (
-                                Ranks[playerRank["peakrank"]] + peakRankAct
-                            )
+                            peakRank = Ranks[playerRank["peakrank"]] + (f" ({peakRankAct})" if peakRankAct else "")
 
                             # PREVIOUS RANK
                             previousRank = Ranks[previousPlayerRank["rank"]]
@@ -1037,15 +1269,19 @@ try:
                             )
 
                             heartbeat_data["players"][player["Subject"]] = {
-                                "name": names[player["Subject"]],
+                                "puuid": player["Subject"],
+                                "name": display_name,
+                                "partyNumber": 0,
                                 "rank": playerRank["rank"],
                                 "peakRank": playerRank["peakrank"],
                                 "peakRankAct": peakRankAct,
                                 "level": player_level,
                                 "rr": rr,
+                                "leaderboard": playerRank.get("leaderboard") or 0,
                                 "kd": ppstats["kd"],
                                 "headshotPercentage": ppstats["hs"],
                                 "winPercentage": f"{playerRank['wr']} ({playerRank['numberofgames']})",
+                                "team": "Ally",
                             }
 
                             # bar()
@@ -1054,6 +1290,57 @@ try:
                 # program_exit(1)
                 time.sleep(9)
             
+            if game_state == "MENUS":
+                log(
+                    f"menu heartbeat roster: "
+                    f"{len(heartbeat_data.get('players', {}))} players"
+                )
+            if heartbeat_data.get("players"):
+                encounter_summaries = {}
+                stored_stats = stats.read_data()
+                self_summary = stats.build_personal_summary(
+                    stored_stats,
+                    Requests.puuid,
+                    names.get(Requests.puuid, "#"),
+                )
+                premade_summaries = {}
+                for puuid, player_data in heartbeat_data["players"].items():
+                    if str(puuid).lower() == str(Requests.puuid).lower():
+                        continue
+                    if str(puuid).lower() in partyMembersList:
+                        summary = stats.build_premade_summary(
+                            stored_stats,
+                            puuid,
+                            active_match_id,
+                            player_data.get("name", "#"),
+                            self_puuid=Requests.puuid,
+                        )
+                        if summary:
+                            premade_summaries[puuid] = summary
+                        continue
+                    summary = stats.build_encounter_summary(
+                        stored_stats,
+                        puuid,
+                        active_match_id,
+                        fallback_name=player_data.get("name", "#"),
+                        fallback_relation=(
+                            "ally"
+                            if player_data.get("team")
+                            and (
+                                player_data.get("team") == active_my_team
+                                or player_data.get("team") == "Ally"
+                            )
+                            else "enemy"
+                        ),
+                        self_puuid=Requests.puuid,
+                    )
+                    if summary:
+                        encounter_summaries[puuid] = summary
+                heartbeat_data["encounters"] = encounter_summaries
+                heartbeat_data["personalSummary"] = self_summary
+                heartbeat_data["premadeSummaries"] = premade_summaries
+            heartbeat_data["server"] = server
+
             title_parts = [f"VALORANT status: {title}"]
 
             if cfg.get_feature_flag("server_id") and server != "":
@@ -1103,29 +1390,25 @@ try:
                                 f"Already played with {played['name']} (last {played['agent']}) {stats.convert_time(played['time_diff'])} ago. (Total played {played['times']} times)"
                             )
                 already_played_with = []
-        if cfg.cooldown == 0:
-            try:
-                input("Press enter to fetch again...")
-            except (EOFError, RuntimeError):
-                import time
-                time.sleep(5)
-        else:
-            # time.sleep(cfg.cooldown)
-            pass
+        # Wait for the next scheduled pass or a refresh request. Refresh only
+        # wakes the loop; it does not clear caches or force new data requests.
+        deadline = None if cfg.cooldown == 0 else time.monotonic() + cfg.cooldown
+        while True:
+            if menu_check_requested.wait(timeout=0.25):
+                menu_check_requested.clear()
+                log("refresh requested; checking current VALORANT state without clearing data caches")
+                break
+            if deadline is not None and time.monotonic() >= deadline:
+                break
 except KeyboardInterrupt:
     os._exit(0)
 except:
     log(traceback.format_exc())
     print(
         color(
-            "The program has encountered an error. If the problem persists, please reach support"
-            f" with the logs found in {os.getcwd()}\\logs",
+            "The program encountered an error. The WebView2 window will remain open; "
+            f"see the logs in {os.getenv('APPDATA')}\\vry\\logs.",
             fore=(255, 0, 0),
         )
     )
-    try:
-        input("press enter to exit...\n")
-    except (EOFError, RuntimeError):
-        import time
-        time.sleep(10)
-    os._exit(1)
+    raise

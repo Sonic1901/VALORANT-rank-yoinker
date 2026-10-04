@@ -1,7 +1,9 @@
-import requests
+import os
 from src.colors import color
 
-version = "2.94"
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+version = "0.1.0"
 enablePrivateLogging = True
 hide_names = True
 hide_levels = True
@@ -195,9 +197,9 @@ DEFAULT_CONFIG = {
     "weapon": "Vandal",
     "chat_limit": 5,
     "table": {
-        "skin": True,
+        "skin": False,
         "rr": True,
-        "earned_rr": True,
+        "earned_rr": False,
         "peakrank": True,
         "previousrank": False,
         "leaderboard": True,
@@ -208,6 +210,8 @@ DEFAULT_CONFIG = {
     },
     "flags": {
         "last_played": True,
+        "party_finder": True,
+        "party_colorblind": True,
         "auto_hide_leaderboard": True,
         "pre_cls": False,
         "game_chat": True,
