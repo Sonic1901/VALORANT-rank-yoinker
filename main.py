@@ -94,8 +94,8 @@ try:
 
     ErrorSRC = Error(log, acc_manager)
 
-    # Automatic update/status checks remain available for a future public
-    # release, but are intentionally disabled while this fork is being cleaned.
+    Requests.check_version(version, Requests.copy_run_update_script)
+    Requests.check_status()
     Requests = Requests(version, log, ErrorSRC)
 
     cfg = Config(log)

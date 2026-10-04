@@ -31,7 +31,7 @@ jobs:
         run: choco install innosetup --yes
       - name: Build executable
         run: |
-          python -m PyInstaller --noconsole --onedir --name "vry" --add-data "vry-gui.html;." --add-data "docs;docs" --add-data "assets;assets" --add-data "src;src" --icon=assets/Logo.ico --collect-all webview --collect-all websocket_server launcher.py
+          python -m PyInstaller --noconsole --onedir --name "vry" --add-data "vry-gui.html;." --add-data "docs;docs" --add-data "assets;assets" --add-data "src;src" --add-data "updatescript.bat;." --icon=assets/Logo.ico --collect-all webview --collect-all websocket_server launcher.py
       - name: Resolve version
         id: version
         run: |

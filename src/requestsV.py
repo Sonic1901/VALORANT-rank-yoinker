@@ -74,13 +74,17 @@ class Requests:
 
     @staticmethod
     def check_version(version, copy_run_update_script):
-        """Check releases from this fork only; never silently switch to upstream."""
+        """Check the latest published release from this fork."""
         try:
             response = requests.get(
                 f"{GITHUB_API}/releases?per_page=1", timeout=(2.5, 6.0)
             )
             response.raise_for_status()
-            releases = response.json()
+            releases = [
+                release
+                for release in response.json()
+                if not release.get("draft") and not release.get("prerelease")
+            ]
             if not releases:
                 return
 
@@ -99,17 +103,10 @@ class Requests:
 
             print(color("[UPDATE] New fork version available!", fore=(0, 255, 0)))
             if str(sys.argv[0]).lower().endswith(".exe"):
-                while True:
-                    update_now = input(
-                        color("Would you like to update now? (Y/n): ", fore=(0, 255, 0))
-                    )
-                    answer = update_now.strip().lower()
-                    if answer in ("n", "no"):
-                        return
-                    if answer in ("", "y", "yes"):
-                        copy_run_update_script(link)
-                        os._exit(1)
-                    print('Please respond with "yes" or "no" ("y", "n") or press enter')
+                if not Requests._confirm_update():
+                    return
+                copy_run_update_script(link)
+                os._exit(0)
         except requests.exceptions.RequestException:
             print(
                 color(
@@ -126,6 +123,29 @@ class Requests:
             )
 
     @staticmethod
+    def _confirm_update():
+        """Use a Windows dialog because release builds do not have a console."""
+        if os.name == "nt":
+            try:
+                import ctypes
+
+                result = ctypes.windll.user32.MessageBoxW(
+                    0,
+                    "A newer version of VALORANT Rank Yoinker is available.\n\n"
+                    "Install it now?",
+                    "VALORANT Rank Yoinker Update",
+                    0x00000004 | 0x00000020,
+                )
+                return result == 6
+            except (AttributeError, OSError):
+                pass
+        try:
+            answer = input("Would you like to update now? (Y/n): ")
+        except EOFError:
+            return False
+        return answer.strip().lower() in ("", "y", "yes")
+
+    @staticmethod
     def _safe_extract_zip(zipped, destination):
         root = os.path.realpath(destination)
         for member in zipped.infolist():
@@ -137,23 +157,29 @@ class Requests:
     @staticmethod
     def copy_run_update_script(link):
         update_root = os.path.join(os.getenv("APPDATA"), "vry")
+        staging_root = os.path.join(update_root, "update-staging")
+        install_root = (
+            os.path.dirname(os.path.abspath(sys.executable))
+            if getattr(sys, "frozen", False)
+            else PROJECT_ROOT
+        )
         os.makedirs(update_root, exist_ok=True)
+        if os.path.isdir(staging_root):
+            shutil.rmtree(staging_root)
+        os.makedirs(staging_root, exist_ok=True)
         shutil.copyfile(
             os.path.join(PROJECT_ROOT, "updatescript.bat"),
             os.path.join(update_root, "updatescript.bat"),
         )
-        response = requests.get(link, stream=True, timeout=(3.05, 30.0))
+        response = requests.get(link, timeout=(3.05, 60.0))
         response.raise_for_status()
-        zipped = zipfile.ZipFile(io.BytesIO(response.content))
-        Requests._safe_extract_zip(zipped, update_root)
-        extracted_folder = os.path.join(
-            update_root, ".".join(os.path.basename(link).split(".")[:-1])
-        )
+        with zipfile.ZipFile(io.BytesIO(response.content)) as zipped:
+            Requests._safe_extract_zip(zipped, staging_root)
         subprocess.Popen(
             [
                 os.path.join(update_root, "updatescript.bat"),
-                extracted_folder,
-                PROJECT_ROOT,
+                staging_root,
+                install_root,
                 update_root,
             ]
         )

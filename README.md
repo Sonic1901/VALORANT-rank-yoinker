@@ -82,7 +82,7 @@ an onedir executable and an installer. To compile locally:
 ```powershell
 .venv\Scripts\python.exe -m PyInstaller --noconsole --onedir --name vry `
   --add-data "vry-gui.html;." --add-data "docs;docs" --add-data "assets;assets" `
-  --add-data "src;src" --icon=assets\Logo.ico `
+  --add-data "src;src" --add-data "updatescript.bat;." --icon=assets\Logo.ico `
   --collect-all webview --collect-all websocket_server launcher.py
 ```
 
@@ -96,6 +96,18 @@ iscc installer.iss /DMyAppVersion=0.1.0
 The installer is written to `dist\vry-0.1.0-setup.exe`. The installer packages
 the already-built `dist\vry` folder, so always rebuild PyInstaller before
 creating an installer after source changes.
+
+### Automatic updates
+
+The packaged application checks the published releases for
+[Sonic1901/VALORANT-rank-yoinker](https://github.com/Sonic1901/VALORANT-rank-yoinker)
+when it starts. If a newer published release contains a portable ZIP, the
+application asks whether to download and install it. The updater replaces the
+current portable or installed files and then relaunches the application.
+
+Draft releases, prereleases, and releases without a portable ZIP are ignored.
+The first release must be published before update checks can find it. Do not
+delete the portable ZIP from future releases.
 
 
 ### GitHub Actions:
