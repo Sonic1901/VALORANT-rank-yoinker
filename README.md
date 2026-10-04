@@ -27,10 +27,15 @@ vRY](https://github.com/zayKenyon/VALORANT-rank-yoinker). It replaces the
 terminal display with a desktop window powered by Microsoft Edge WebView2,
 while preserving the original local-client rank tracking workflow.
 
-![Tracker view](assets/tracker.png)
+### Example screenshots
 
-![Loadouts view](assets/loadouts-1.png)
-![Loadouts details](assets/loadouts-2.png)
+| Tracker view | Tracker in-game view |
+| --- | --- |
+| ![Tracker overview](assets/Tracker1.png) | ![Tracker in-game view](assets/Tracker2.png) |
+
+| Match loadouts | Individual loadout details |
+| --- | --- |
+| ![Match loadouts](assets/LoadoutGeneral.png) | ![Individual loadout details](assets/LoadoutSolo.png) |
 
 ## Prerequisites
 
