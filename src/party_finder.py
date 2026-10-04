@@ -29,7 +29,7 @@ def get_recent_match_history(puuid, Requests_obj, log_func, retries=2, backoff_f
     for attempt in range(retries + 1):
         try:
             response = Requests_obj.fetch('pd', endpoint, 'get', rate_limit_seconds=1)
-            
+
             if response is None:
                 log_func(f"No response fetching match history for {puuid}")
                 return set()
@@ -39,13 +39,13 @@ def get_recent_match_history(puuid, Requests_obj, log_func, retries=2, backoff_f
                 if not matches:
                     log_func(f"Empty match history found for {puuid} via competitiveupdates")
                     return set()
-                    
+
                 match_ids = {
                     match.get("MatchID") for match in matches if match.get("MatchID")
                 }
                 log_func(f"Fetched {len(match_ids)} match IDs for {puuid} via competitiveupdates")
                 return match_ids
-                
+
             elif response.status_code == 404:
                 log_func(f"Match history not found (404) for {puuid} via competitiveupdates")
                 return set()
@@ -73,7 +73,7 @@ def find_parties(
     authoritative_party_members: set[str] | None = None,
 ) -> dict[str, tuple[str, str]]:
     """
-    Identifies parties based on shared recent match history 
+    Identifies parties based on shared recent match history
     (at least 2 shared matches in the last 5 ranked updates).
     If current_teams is provided (for INGAME state), it also ensures members are on the same current team.
     Returns a dictionary mapping PUUIDs to their assigned party tuple (number_string, color_hex).
@@ -106,7 +106,7 @@ def find_parties(
         else:
             match_history_cache[cache_key] = get_recent_match_history(puuid, Requests_obj, log_func)
             persistent_cache[cache_key] = (now, match_history_cache[cache_key])
-            time.sleep(0.1) 
+            time.sleep(0.1)
 
     log_func("Finished fetching history. Identifying parties...")
     log_func(
@@ -199,7 +199,7 @@ def find_parties(
             if assign_party:
                 # Assign the current party number
                 party_number_str = str(next_party_number)
-                
+
                 # Assign a unique color
                 party_color = next(color_iterator)
                 while party_color in assigned_colors:
@@ -207,27 +207,27 @@ def find_parties(
                     # Basic safety break if all colors somehow get used twice quickly (unlikely)
                     if len(assigned_colors) >= len(PARTY_COLORS) * 2: break
                 assigned_colors.add(party_color)
-                
+
                 log_func(f"Found party #{party_number_str} with color {party_color}: {current_party}")
-                
+
                 assignment_value = (party_number_str, party_color)
-                
+
                 for member_puuid in current_party:
                     party_assignments[member_puuid] = assignment_value
                     checked_puuids.add(member_puuid)
-                    
+
                 # Increment for the next party
-                next_party_number += 1 
+                next_party_number += 1
             # else: Party assignment skipped due to current team mismatch
-            
+
             # Mark all checked members regardless of assignment outcome for this iteration
             # This prevents individuals from a rejected party forming smaller parties later
             for member_puuid in current_party:
                  checked_puuids.add(member_puuid)
-                 
+
         else: # Single player or failed party checks
              checked_puuids.add(puuid)
 
     end_time = time.time()
     log_func(f"Party finding finished in {end_time - start_time:.2f} seconds. Assignments: {party_assignments}")
-    return party_assignments 
+    return party_assignments
