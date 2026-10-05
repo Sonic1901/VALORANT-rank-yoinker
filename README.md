@@ -31,11 +31,11 @@ while preserving the original local-client rank tracking workflow.
 
 | Tracker view | Tracker in-game view |
 | --- | --- |
-| ![Tracker overview](assets/Tracker1.png) | ![Tracker in-game view](assets/Tracker2.png) |
+| ![Tracker Example 1](assets/Tracker1.png) | ![Tracker Example 2](assets/Tracker2.png) |
 
 | Match loadouts | Individual loadout details |
 | --- | --- |
-| ![Match loadouts](assets/LoadoutGeneral.png) | ![Individual loadout details](assets/LoadoutSolo.png) |
+| ![Match Loadouts](assets/LoadoutGeneral.png) | ![Individual Loadout Details](assets/LoadoutSolo.png) |
 
 ## Prerequisites
 
