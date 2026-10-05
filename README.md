@@ -95,10 +95,10 @@ an onedir executable and an installer. To compile locally:
 5) After the portable build works, compile the installer:
 
 ```powershell
-iscc installer.iss /DMyAppVersion=0.1.0
+iscc installer.iss /DMyAppVersion=0.1.1
 ```
 
-The installer is written to `dist\vry-0.1.0-setup.exe`. The installer packages
+The installer is written to `dist\vry-0.1.1-setup.exe`. The installer packages
 the already-built `dist\vry` folder, so always rebuild PyInstaller before
 creating an installer after source changes.
 
@@ -122,7 +122,7 @@ runs on GitHub-hosted Windows runners. A successful run produces a portable ZIP
 and an Inno Setup installer artifact. Friends can use either artifact; the installer
 is easiest, while the portable ZIP does not require an installation step.
 
-Create a version tag such as `0.1.0`, or run the workflow manually with a tag.
+Create a version tag such as `0.1.1`, or run the workflow manually with a tag.
 The workflow produces a portable ZIP and an Inno Setup installer.
 
 
