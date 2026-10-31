@@ -1,8 +1,16 @@
+import time
+
+# Menu presence events can arrive in quick bursts; reuse one party lookup
+# briefly instead of issuing two remote requests per event.
+PARTY_API_CACHE_SECONDS = 5
+
+
 class Menu:
     def __init__(self, Requests, log, presences):
         self.Requests = Requests
         self.log = log
         self.presences = presences
+        self._party_api_cache = None
 
     def get_party_json(self, GamePlayersPuuid, presencesDICT):
         game_players = {str(puuid).lower() for puuid in GamePlayersPuuid}
@@ -45,6 +53,54 @@ class Menu:
         return party_json
 
     def get_party_members(self, self_puuid, presencesDICT):
+        # The party service lists every member, including players who are not
+        # on this account's friends list. Presence only exposes friends, so it
+        # is kept as a fallback for when the party service is unavailable.
+        members = self._get_party_members_from_api(self_puuid)
+        if members:
+            return members
+        return self._get_party_members_from_presence(self_puuid, presencesDICT)
+
+    def _get_party_members_from_api(self, self_puuid):
+        now = time.monotonic()
+        cached = self._party_api_cache
+        if cached and cached[0] == self_puuid and now - cached[1] < PARTY_API_CACHE_SECONDS:
+            return cached[2]
+
+        members = []
+        try:
+            player = self.Requests.fetch(
+                "glz", f"/parties/v1/players/{self_puuid}", "get", rate_limit_seconds=1
+            )
+            party_id = player.get("CurrentPartyID") if isinstance(player, dict) else None
+            if party_id:
+                party = self.Requests.fetch(
+                    "glz", f"/parties/v1/parties/{party_id}", "get", rate_limit_seconds=1
+                )
+                party_members = party.get("Members", []) if isinstance(party, dict) else []
+                for member in party_members:
+                    subject = member.get("Subject")
+                    if not subject:
+                        continue
+                    identity = member.get("PlayerIdentity") or {}
+                    members.append({
+                        "Subject": subject,
+                        "PlayerIdentity": {"AccountLevel": identity.get("AccountLevel", 0)},
+                    })
+        except Exception as exc:
+            self.log(f"party API lookup failed: {exc}")
+            members = []
+
+        # A valid party always contains the current player; anything else is
+        # treated as a failed lookup so the presence fallback is used.
+        if not any(str(m["Subject"]).lower() == str(self_puuid).lower() for m in members):
+            members = []
+        if members:
+            self.log(f"retrieved party members from party API: {members}")
+        self._party_api_cache = (self_puuid, now, members)
+        return members
+
+    def _get_party_members_from_presence(self, self_puuid, presencesDICT):
         res = []
         party_id = ""
         self_puuid = str(self_puuid).lower()
