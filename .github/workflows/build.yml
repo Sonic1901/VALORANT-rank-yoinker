@@ -10,6 +10,9 @@ on:
       ref_name:
         description: 'Version/tag name (e.g. v1.0.0)'
         required: true
+permissions:
+  # Required for the release step to create the draft and upload assets.
+  contents: write
 jobs:
   build:
     runs-on: windows-latest
@@ -37,17 +40,22 @@ jobs:
         run: |
           $ver = if ("${{ github.event.inputs.ref_name }}" -ne "") { "${{ github.event.inputs.ref_name }}" } else { "${{ github.ref_name }}" }
           echo "tag=$ver" >> $env:GITHUB_OUTPUT
+          $notes = ".github/RELEASE_$ver.md"
+          if (-not (Test-Path $notes)) { $notes = ".github/RELEASE_TEMPLATE.MD" }
+          echo "notes=$notes" >> $env:GITHUB_OUTPUT
       - name: Compile Inno Setup installer
         run: iscc installer.iss /DMyAppVersion=${{ steps.version.outputs.tag }}
       - name: Zip portable build
         run: Compress-Archive -Path dist\vry\* -DestinationPath dist\vry-${{ steps.version.outputs.tag }}-portable.zip
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Version ${{ steps.version.outputs.tag }}
           files: |
             dist/vry-${{ steps.version.outputs.tag }}-setup.exe
             dist/vry-${{ steps.version.outputs.tag }}-portable.zip
-          body_path: .github/RELEASE_TEMPLATE.md
+          body_path: ${{ steps.version.outputs.notes }}
           draft: true
           generate_release_notes: true
         env:
