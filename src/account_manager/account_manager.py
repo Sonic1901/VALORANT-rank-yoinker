@@ -1,3 +1,6 @@
+import ctypes
+import subprocess
+
 import InquirerPy
 from InquirerPy import inquirer
 

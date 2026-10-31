@@ -105,8 +105,8 @@ class Requests:
             if str(sys.argv[0]).lower().endswith(".exe"):
                 if not Requests._confirm_update():
                     return
-                copy_run_update_script(link)
-                os._exit(0)
+                if copy_run_update_script(link):
+                    os._exit(0)
         except requests.exceptions.RequestException:
             print(
                 color(
@@ -175,14 +175,41 @@ class Requests:
         response.raise_for_status()
         with zipfile.ZipFile(io.BytesIO(response.content)) as zipped:
             Requests._safe_extract_zip(zipped, staging_root)
-        subprocess.Popen(
-            [
-                os.path.join(update_root, "updatescript.bat"),
-                staging_root,
-                install_root,
-                update_root,
-            ]
+
+        script = os.path.join(update_root, "updatescript.bat")
+        args = [staging_root, install_root, update_root]
+        if Requests._is_writable_dir(install_root):
+            subprocess.Popen([script, *args])
+            return True
+
+        # Installer builds live under Program Files, which normal users cannot
+        # write to. Run the update script as administrator (UAC prompt).
+        import ctypes
+
+        result = ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", script, subprocess.list2cmdline(args), update_root, 0
         )
+        if result <= 32:
+            print(
+                color(
+                    "[WARNING] Update cancelled - administrator permission is required.",
+                    fore=(255, 165, 0),
+                )
+            )
+            return False
+        return True
+
+    @staticmethod
+    def _is_writable_dir(path):
+        # os.access ignores Windows folder permissions, so try a real write.
+        probe = os.path.join(path, f".vry-write-test-{os.getpid()}")
+        try:
+            with open(probe, "w", encoding="utf-8"):
+                pass
+            os.remove(probe)
+            return True
+        except OSError:
+            return False
 
     @staticmethod
     def check_status():

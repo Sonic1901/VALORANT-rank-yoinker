@@ -3,7 +3,7 @@ from src.colors import color
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-version = "0.1.2"
+version = "0.1.3"
 enablePrivateLogging = True
 hide_names = True
 hide_levels = True
