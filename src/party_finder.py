@@ -66,8 +66,8 @@ def get_recent_match_history(puuid, Requests_obj, log_func, retries=2, backoff_f
     return set()
 
 
-def _get_match_team_members(match_id, Requests_obj, log_func):
-    """Return normalized team membership from one ranked match detail response."""
+def _get_match_players(match_id, Requests_obj, log_func):
+    """Return {subject: (team, party_id)} from one match detail response."""
     cache = getattr(Requests_obj, "_party_match_details_cache", {})
     Requests_obj._party_match_details_cache = cache
     if match_id in cache:
@@ -80,14 +80,18 @@ def _get_match_team_members(match_id, Requests_obj, log_func):
         if response is None or not response.ok:
             cache[match_id] = {}
             return {}
-        team_members = {}
+        players = {}
         for player in response.json().get("players", []):
             subject = str(player.get("subject") or "").lower()
             team = player.get("teamId") or player.get("TeamID")
+            party_id = player.get("partyId") or player.get("PartyID")
             if subject and team:
-                team_members.setdefault(str(team).lower(), set()).add(subject)
-        cache[match_id] = team_members
-        return team_members
+                players[subject] = (
+                    str(team).lower(),
+                    str(party_id).lower() if party_id else None,
+                )
+        cache[match_id] = players
+        return players
     except Exception as exc:
         log_func(f"Unable to verify party match {match_id}: {exc}")
         cache[match_id] = {}
@@ -97,13 +101,23 @@ def _get_match_team_members(match_id, Requests_obj, log_func):
 def _verified_shared_match(
     first_puuid, second_puuid, shared_matches, Requests_obj, log_func
 ):
-    """Accept a single shared history match only when its roster confirms teammates."""
+    """Accept a single shared history match only when its roster shows the
+    two players queued together.
+
+    Being teammates once is weak evidence (random teammates can meet again),
+    so the match's party ID is required. Same-team membership is only used
+    when Riot omits party IDs from the response.
+    """
     for match_id in shared_matches:
-        team_members = _get_match_team_members(match_id, Requests_obj, log_func)
-        if any(
-            first_puuid in members and second_puuid in members
-            for members in team_members.values()
-        ):
+        players = _get_match_players(match_id, Requests_obj, log_func)
+        first = players.get(first_puuid)
+        second = players.get(second_puuid)
+        if not first or not second or first[0] != second[0]:
+            continue
+        if first[1] and second[1]:
+            if first[1] == second[1]:
+                return match_id
+        elif first[1] is None and second[1] is None:
             return match_id
     return None
 
@@ -121,6 +135,15 @@ def find_parties(
     If current_teams is provided (for INGAME state), it also ensures members are on the same current team.
     Returns a dictionary mapping PUUIDs to their assigned party tuple (number_string, color_hex).
     """
+    # The current player's party is already known from the party service or
+    # presence, and main.py marks it directly. Leave those players (and the
+    # current player, even when solo) out of history matching so stale
+    # history cannot link them to strangers or block other parties.
+    if authoritative_party_members is not None:
+        known_party = {str(member).lower() for member in authoritative_party_members}
+        known_party.add(str(Requests_obj.puuid).lower())
+        puuids = [puuid for puuid in puuids if str(puuid).lower() not in known_party]
+
     if not puuids:
         return {}
 
@@ -242,17 +265,6 @@ def find_parties(
                             assign_party = False
                             break # No need to check further members
             # --- End Current Team Check ---
-
-            # A shared history match is not enough to claim that the current
-            # authenticated player is presently grouped with someone. Current
-            # party membership from the client is authoritative for that case.
-            if (
-                assign_party
-                and authoritative_party_members is not None
-                and str(Requests_obj.puuid).lower() in current_party
-                and not current_party.issubset(authoritative_party_members)
-            ):
-                assign_party = False
 
             if assign_party:
                 # Assign the current party number

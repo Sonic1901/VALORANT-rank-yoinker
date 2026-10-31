@@ -12,6 +12,11 @@ friends list.
   service is unavailable.
 - Saves party members as premades in encounter history, so their win/loss
   records are tracked as queued-together games.
+- Confirms parties found from a single shared recent match using Riot's party
+  ID for that match, so random players who were once teammates are no longer
+  marked as a party.
+- Leaves your own party out of match-history detection, which avoids
+  conflicting party markers and saves several Riot API requests per match.
 
 ### Downloads
 
